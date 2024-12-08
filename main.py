@@ -1,7 +1,7 @@
 import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, Response, jsonify
-import torch
+import onnxruntime as ort
 from PIL import Image, ImageDraw
 import base64
 import numpy as np
@@ -19,8 +19,15 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-# Carregar o modelo YOLOv5 treinado
-model = torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt', force_reload=True)
+# Carregar o modelo ONNX
+ort_session = ort.InferenceSession('best.onnx')
+
+def preprocess_image(img):
+    """Pré-processar a imagem para entrada no modelo ONNX."""
+    img = img.resize((320, 320))  # Reduzir resolução
+    img = np.array(img).astype(np.float32) / 255.0  # Normalizar para [0,1]
+    img = np.transpose(img, (2, 0, 1))  # Alterar para formato [C, H, W]
+    return np.expand_dims(img, axis=0)
 
 # Função para inicializar o banco de dados
 def init_db():
@@ -58,21 +65,17 @@ def generate_video_feed():
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(img)
 
-        # Realizar a predição
-        results = model([pil_img])
-        detections = results.xyxy[0].cpu().numpy()  # Obter os resultados
-        filtered_detections = [d for d in detections if d[4] >= 0.85]  # Filtrar predições com confiança >= 0.85
+        # Pré-processar a imagem e realizar a predição
+        input_tensor = preprocess_image(pil_img)
+        results = ort_session.run(None, {"images": input_tensor})[0]
 
         # Desenhar as caixas na imagem
-        for det in filtered_detections:
+        for det in results:
             x1, y1, x2, y2, conf, cls = det
-            try:
-                label = f"{results.names[int(cls)]} {conf:.2f}"
-            except IndexError:
-                label = f"Classe {int(cls)} {conf:.2f}"  # Se a classe não for encontrada, apenas exibe o número da classe
-
-            cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-            cv2.putText(frame, label, (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            if conf >= 0.85:  # Filtrar predições com confiança >= 0.85
+                label = f"Classe {int(cls)} {conf:.2f}"
+                cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
+                cv2.putText(frame, label, (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
         
         # Converter para JPEG e enviar via Response
         ret, jpeg = cv2.imencode('.jpg', frame)
@@ -102,20 +105,17 @@ def predict_camera():
         # Converter para RGB (OpenCV usa BGR por padrão)
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
-        # Realizar a predição
-        results = model([pil_img])
-        detections = results.xyxy[0].cpu().numpy()  # Obter os resultados
-        filtered_detections = [d for d in detections if d[4] >= 0.85]  # Filtrar predições com confiança >= 0.85
+        # Pré-processar e realizar a predição
+        input_tensor = preprocess_image(pil_img)
+        results = ort_session.run(None, {"images": input_tensor})[0]
 
         # Contar e coletar as coordenadas dos BigBags detectados (classe 0, BigBag)
         bigbags = []
         bigbag_count = 0
-        for det in filtered_detections:
-            cls = int(det[5])
-            if cls == 0:  # Classe 0 é BigBag
+        for det in results:
+            x1, y1, x2, y2, conf, cls = det
+            if conf >= 0.85 and int(cls) == 0:  # Filtrar BigBags com confiança >= 0.85
                 bigbag_count += 1
-                # Extrair as coordenadas dos BigBags detectados
-                x1, y1, x2, y2, _, _ = det
                 bigbags.append({
                     "x": int(x1),
                     "y": int(y1),
@@ -127,13 +127,12 @@ def predict_camera():
         return jsonify({
             "status": "success", 
             "count": bigbag_count, 
-            "bigbags": bigbags  # Incluindo as coordenadas dos BigBags
+            "bigbags": bigbags
         })
 
     except Exception as e:
         print(f"Erro durante a predição: {e}")
         return jsonify({"status": "error", "message": str(e)})
-
 
 @app.route('/history')
 def history():
@@ -153,4 +152,3 @@ def history():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
-

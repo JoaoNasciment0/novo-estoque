@@ -1,1 +1,1 @@
-web: gunicorn -w 2 --max-requests 100 --max-requests-jitter 10 -b 0.0.0.0:5000 main:app
+web: gunicorn -w 2 --preload -b 0.0.0.0:5000 main:app

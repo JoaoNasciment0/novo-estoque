@@ -2,15 +2,15 @@ import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, Response, jsonify
 import torch
-from PIL import Image, ImageDraw
+from PIL import Image
 import base64
 import numpy as np
 import cv2
+import gc  # Para coleta de lixo
 
-# Inicializar o Flask
 app = Flask(__name__)
 
-# Configurações de diretórios
+# Configuração de pastas
 UPLOAD_FOLDER = 'static/uploads'
 OUTPUT_FOLDER = 'static/output'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -19,10 +19,11 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-# Carregar o modelo YOLOv5 treinado
-model = torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt', force_reload=True)
+# Carregar modelo (somente CPU para limitar uso de memória)
+model = torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt', force_reload=True, device='cpu')
+model.eval()  # Define o modelo para inferência (economiza recursos)
 
-# Função para inicializar o banco de dados
+# Inicialização do banco de dados
 def init_db():
     conn = sqlite3.connect('database.db')
     cursor = conn.cursor()
@@ -37,7 +38,6 @@ def init_db():
     conn.commit()
     conn.close()
 
-# Inicializar o banco de dados
 init_db()
 
 @app.route('/')
@@ -46,40 +46,33 @@ def index():
 
 # Função para gerar o feed de vídeo
 def generate_video_feed():
-    # Abrir a câmera
     cap = cv2.VideoCapture(0)
-    
     while True:
         ret, frame = cap.read()
         if not ret:
             break
-        
-        # Converter para RGB (OpenCV usa BGR por padrão)
+
+        # Conversão e predição
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(img)
 
-        # Realizar a predição
-        results = model([pil_img])
-        detections = results.xyxy[0].cpu().numpy()  # Obter os resultados
-        filtered_detections = [d for d in detections if d[4] >= 0.85]  # Filtrar predições com confiança >= 0.85
+        with torch.no_grad():  # Desativa gradientes para economizar memória
+            results = model([pil_img])
 
-        # Desenhar as caixas na imagem
+        detections = results.xyxy[0].cpu().numpy()
+        filtered_detections = [d for d in detections if d[4] >= 0.85]
+
         for det in filtered_detections:
             x1, y1, x2, y2, conf, cls = det
-            try:
-                label = f"{results.names[int(cls)]} {conf:.2f}"
-            except IndexError:
-                label = f"Classe {int(cls)} {conf:.2f}"  # Se a classe não for encontrada, apenas exibe o número da classe
-
+            label = f"{results.names[int(cls)]} {conf:.2f}"
             cv2.rectangle(frame, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-            cv2.putText(frame, label, (int(x1), int(y1)-10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-        
-        # Converter para JPEG e enviar via Response
+            cv2.putText(frame, label, (int(x1), int(y1) - 10), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+
         ret, jpeg = cv2.imencode('.jpg', frame)
         if not ret:
             continue
         frame = jpeg.tobytes()
-        
+
         yield (b'--frame\r\n'
                b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n\r\n')
 
@@ -90,31 +83,27 @@ def video_feed():
 @app.route('/predict_camera', methods=['POST'])
 def predict_camera():
     try:
-        # Receber a imagem em base64
+        # Receber e processar imagem
         data = request.get_json()
         image_data = data['image']
-        
-        # Converter base64 para imagem
         img_data = base64.b64decode(image_data.split(',')[1])
         np_arr = np.frombuffer(img_data, np.uint8)
         img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        # Converter para RGB (OpenCV usa BGR por padrão)
         pil_img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
 
-        # Realizar a predição
-        results = model([pil_img])
-        detections = results.xyxy[0].cpu().numpy()  # Obter os resultados
-        filtered_detections = [d for d in detections if d[4] >= 0.85]  # Filtrar predições com confiança >= 0.85
+        with torch.no_grad():
+            results = model([pil_img])
 
-        # Contar e coletar as coordenadas dos BigBags detectados (classe 0, BigBag)
+        detections = results.xyxy[0].cpu().numpy()
+        filtered_detections = [d for d in detections if d[4] >= 0.85]
+
         bigbags = []
         bigbag_count = 0
         for det in filtered_detections:
             cls = int(det[5])
-            if cls == 0:  # Classe 0 é BigBag
+            if cls == 0:
                 bigbag_count += 1
-                # Extrair as coordenadas dos BigBags detectados
                 x1, y1, x2, y2, _, _ = det
                 bigbags.append({
                     "x": int(x1),
@@ -122,23 +111,17 @@ def predict_camera():
                     "width": int(x2 - x1),
                     "height": int(y2 - y1)
                 })
-        
-        # Retornar a contagem e as coordenadas dos BigBags
-        return jsonify({
-            "status": "success", 
-            "count": bigbag_count, 
-            "bigbags": bigbags  # Incluindo as coordenadas dos BigBags
-        })
+
+        gc.collect()  # Libera memória manualmente
+        return jsonify({"status": "success", "count": bigbag_count, "bigbags": bigbags})
 
     except Exception as e:
         print(f"Erro durante a predição: {e}")
         return jsonify({"status": "error", "message": str(e)})
 
-
 @app.route('/history')
 def history():
     try:
-        # Recuperar os dados do banco de dados
         conn = sqlite3.connect('database.db')
         cursor = conn.cursor()
         cursor.execute('SELECT id, image_name, count FROM detections')
@@ -153,4 +136,3 @@ def history():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)
-

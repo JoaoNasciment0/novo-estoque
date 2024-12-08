@@ -1,8 +1,8 @@
-Flask
-gunicorn
-torch
+flask
+torch 
+torchvision
+pillow
 numpy
 opencv-python
-Pillow
-onnxruntime
-flask-compress
+opencv-python-headless
+gunicorn

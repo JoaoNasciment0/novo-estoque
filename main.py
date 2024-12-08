@@ -6,11 +6,10 @@ from PIL import Image
 import base64
 import numpy as np
 import cv2
-import gc  # Para coleta de lixo
+import gc  
 
 app = Flask(__name__)
 
-# Configuração de pastas
 UPLOAD_FOLDER = 'static/uploads'
 OUTPUT_FOLDER = 'static/output'
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -19,13 +18,11 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-# Carregar modelo (somente CPU para limitar uso de memória)
-model = torch.hub.load('ultralytics/yolov5', 'custom', path='best.pt', force_reload=True, device='cpu')
-model.eval()  # Define o modelo para inferência (economiza recursos)
+model = torch.hub.load('ultralytics/yolov5', 'custom', path='IA-Treinada/best.pt', force_reload=True, device='cpu')
+model.eval()
 
-# Inicialização do banco de dados
 def init_db():
-    conn = sqlite3.connect('database.db')
+    conn = sqlite3.connect('db/database.db')
     cursor = conn.cursor()
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS detections (
@@ -44,7 +41,6 @@ init_db()
 def index():
     return render_template('index.html')
 
-# Função para gerar o feed de vídeo
 def generate_video_feed():
     cap = cv2.VideoCapture(0)
     while True:
@@ -52,11 +48,10 @@ def generate_video_feed():
         if not ret:
             break
 
-        # Conversão e predição
         img = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(img)
 
-        with torch.no_grad():  # Desativa gradientes para economizar memória
+        with torch.no_grad():
             results = model([pil_img])
 
         detections = results.xyxy[0].cpu().numpy()
@@ -83,7 +78,6 @@ def video_feed():
 @app.route('/predict_camera', methods=['POST'])
 def predict_camera():
     try:
-        # Receber e processar imagem
         data = request.get_json()
         image_data = data['image']
         img_data = base64.b64decode(image_data.split(',')[1])
@@ -112,11 +106,10 @@ def predict_camera():
                     "height": int(y2 - y1)
                 })
 
-        gc.collect()  # Libera memória manualmente
+        gc.collect()
         return jsonify({"status": "success", "count": bigbag_count, "bigbags": bigbags})
 
     except Exception as e:
-        print(f"Erro durante a predição: {e}")
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/history')
@@ -127,12 +120,10 @@ def history():
         cursor.execute('SELECT id, image_name, count FROM detections')
         records = cursor.fetchall()
         conn.close()
-
         return render_template('history.html', records=records)
 
     except Exception as e:
-        print(f"Erro ao acessar o histórico: {e}")
-        return "Ocorreu um erro ao acessar o histórico. Verifique o console para mais detalhes."
+        return "Ocorreu um erro ao acessar o histórico."
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=5000, debug=True)

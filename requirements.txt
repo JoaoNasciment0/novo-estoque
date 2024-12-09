@@ -1,5 +1,5 @@
 flask
-torch 
+torch
 torchvision
 pillow
 numpy
@@ -7,3 +7,6 @@ opencv-python
 opencv-python-headless
 gunicorn
 pandas
+requests
+pyyaml
+matplotlib

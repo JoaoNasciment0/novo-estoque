@@ -31,5 +31,4 @@ WORKDIR /novo-estoque
 # Expor a porta que o Flask irá rodar
 EXPOSE 5000
 
-# Comando para rodar a aplicação
 CMD ["python", "main.py"]

@@ -2,13 +2,13 @@
 FROM python:3.10-slim
 
 # Criar um diretório /app dentro do container
-RUN mkdir /novo-estoque
+RUN mkdir /app
 
 # Definir /app como o diretório de trabalho dentro do container
-WORKDIR /novo-estoque
+WORKDIR /app
 
 # Copiar os arquivos da aplicação para o diretório /app no container
-COPY . /novo-estoque
+COPY . /app
 
 # Instalar as dependências do sistema
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -26,11 +26,10 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Clonar o repositório YOLOv5 e instalar as dependências dele
 RUN git clone https://github.com/ultralytics/yolov5.git /train/yolov5
-WORKDIR /train/yolov5
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Retornar ao diretório principal do projeto
-WORKDIR /novo-estoque
+WORKDIR /app
 
 # Garantir que o modelo treinado esteja no local correto
 COPY IA-Treinada/best.pt IA-Treinada/best.pt

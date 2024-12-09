@@ -31,8 +31,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Retornar ao diretório principal do projeto
 WORKDIR /app
 
-# Garantir que o modelo treinado esteja no local correto
-COPY IA-Treinada/best.pt IA-Treinada/best.pt
+COPY app/IA-Treinada/best.pt app/IA-Treinada/best.pt
 
 # Expor a porta que o Flask irá rodar
 EXPOSE 5000

@@ -10,19 +10,25 @@ WORKDIR /app
 # Copiar os arquivos da aplicação para o diretório /app no container
 COPY . /app
 
-# Instalar as dependências do sistema (caso precise de bibliotecas nativas)
-
+# Instalar as dependências do sistema
 RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     libsm6 \
     libxrender1 \
     libxext6 \
-    libgl1-mesa-glx \ 
+    libgl1-mesa-glx \
+    git \ 
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar as dependências do Python
 RUN pip install --upgrade pip
 RUN pip install -r requirements.txt
+
+# Clonar o repositório YOLOv5 e configurar o cache local
+RUN git clone https://github.com/ultralytics/yolov5.git /app/yolov5
+
+# Mover o modelo treinado para o local adequado (se já estiver no projeto)
+COPY IA-Treinada/best.pt /app/IA-Treinada/best.pt
 
 # Expor a porta que o Flask irá rodar
 EXPOSE 5000

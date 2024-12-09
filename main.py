@@ -18,7 +18,7 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-model = torch.hub.load('ultralytics/yolov5', 'custom', path='IA-Treinada/best.pt', force_reload=True, device='cpu')
+model = torch.hub.load('ultralytics/yolov5', 'custom', path='IA-Treinada/best.pt', force_reload=True, device='cpu', trust_repo=True)
 model.eval()
 
 def init_db():

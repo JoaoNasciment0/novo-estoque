@@ -11,24 +11,29 @@ WORKDIR /app
 COPY . /app
 
 # Instalar as dependências do sistema
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     libglib2.0-0 \
     libsm6 \
     libxrender1 \
     libxext6 \
     libgl1-mesa-glx \
-    git \ 
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar as dependências do Python
-RUN pip install --upgrade pip
-RUN pip install -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Clonar o repositório YOLOv5 e configurar o cache local
-RUN git clone https://github.com/ultralytics/yolov5.git /app/yolov5
+# Clonar o repositório YOLOv5 e instalar as dependências dele
+RUN git clone https://github.com/ultralytics/yolov5.git /train/yolov5
+WORKDIR /train/yolov5
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Mover o modelo treinado para o local adequado (se já estiver no projeto)
-COPY IA-Treinada/best.pt /app/IA-Treinada/best.pt
+# Retornar ao diretório principal do projeto
+WORKDIR /app
+
+# Garantir que o modelo treinado esteja no local correto
+COPY IA-Treinada/best.pt IA-Treinada/best.pt
 
 # Expor a porta que o Flask irá rodar
 EXPOSE 5000

@@ -7,6 +7,8 @@ import base64
 import numpy as np
 import cv2
 import gc  
+from pathlib import Path
+import sys
 
 app = Flask(__name__)
 
@@ -18,7 +20,14 @@ os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['OUTPUT_FOLDER'] = OUTPUT_FOLDER
 
-model = torch.hub.load('ultralytics/yolov5', 'custom', path='IA-Treinada/best.pt', force_reload=True, device='cpu', trust_repo=True)
+# Caminho para o repositório YOLOv5 clonado
+YOLOV5_PATH = Path("train/yolov5")
+
+# Adicionar o YOLOv5 ao PYTHONPATH
+sys.path.append(str(YOLOV5_PATH))
+
+# Carregar o modelo YOLOv5
+model = torch.hub.load(str(YOLOV5_PATH), 'custom', path='IA-Treinada/best.pt', source='local', device='cpu')
 model.eval()
 
 def init_db():
